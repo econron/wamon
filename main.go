@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 package main
 
-import "wamon/cmd"
+import "gihub.com/econron/wamon/cmd"
 
 func main() {
 	cmd.Execute()
