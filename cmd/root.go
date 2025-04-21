@@ -28,9 +28,9 @@ import (
 	"strings"
 	"time"
 
-	"gihub.com/econron/wamon/internal/db"
-	"gihub.com/econron/wamon/internal/interactive"
-	"gihub.com/econron/wamon/internal/models"
+	"github.com/econron/wamon/internal/db"
+	"github.com/econron/wamon/internal/interactive"
+	"github.com/econron/wamon/internal/models"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,7 +43,7 @@ var categoryFilter string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "gihub.com/econron/wamon",
+	Use:   "github.com/econron/wamon",
 	Short: "ワモンアザラシと一緒に日々の活動を記録するCLIツール",
 	Long: `ワモンアザラシと一緒に日々の活動を記録するCLIツールです。
 調べ物や書いたプログラムを記録して、ワモンアザラシから褒めてもらいましょう！`,
@@ -152,7 +152,7 @@ func init() {
 		fmt.Println("Error getting user home directory:", err)
 		os.Exit(1)
 	}
-	defaultDBPath := filepath.Join(home, ".wamon", "gihub.com/econron/wamon.db")
+	defaultDBPath := filepath.Join(home, ".wamon", "github.com/econron/wamon.db")
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultDBPath, "Path to SQLite database file")
 
 	// Add list command

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gihub.com/econron/wamon/internal/models"
+	"github.com/econron/wamon/internal/models"
 
 	_ "github.com/mattn/go-sqlite3"
 )

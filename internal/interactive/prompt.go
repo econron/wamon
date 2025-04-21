@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gihub.com/econron/wamon/internal/models"
+	"github.com/econron/wamon/internal/models"
 )
 
 // Prompter handles interactive CLI prompts
