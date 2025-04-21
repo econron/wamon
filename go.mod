@@ -1,4 +1,4 @@
-module wamon
+module github.com/econron/wamon
 
 go 1.22.5
 
