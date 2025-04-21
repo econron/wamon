@@ -84,6 +84,34 @@ func SaveEntry(entry *models.Entry) error {
 	return err
 }
 
+// UpdateEntry updates an existing entry in the database
+func UpdateEntry(entry *models.Entry) error {
+	result, err := db.Exec(
+		`UPDATE entries 
+		 SET category = ?, research_topic = ?, program_title = ?, satisfaction = ?
+		 WHERE id = ?`,
+		entry.Category,
+		entry.ResearchTopic,
+		entry.ProgramTitle,
+		entry.Satisfaction,
+		entry.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Check if the entry was actually updated
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
 // GetAllEntries retrieves all entries from the database
 func GetAllEntries() ([]*models.Entry, error) {
 	rows, err := db.Query(`

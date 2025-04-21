@@ -22,6 +22,7 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,67 @@ var rootCmd = &cobra.Command{
 調べ物や書いたプログラムを記録して、ワモンアザラシから褒めてもらいましょう！`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runInteractiveJournal()
+	},
+}
+
+// editCmd represents the edit command
+var editCmd = &cobra.Command{
+	Use:   "edit [ID]",
+	Short: "既存の記録を編集",
+	Long: `指定されたIDの記録を編集します。
+エディタが開くので、内容を編集して保存してください。`,
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize database
+		_, err := db.InitDB(dbPath)
+		if err != nil {
+			fmt.Printf("データベースの初期化エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get the entry
+		entry, err := db.GetEntryByID(args[0])
+		if err != nil {
+			if err == sql.ErrNoRows {
+				fmt.Printf("ID %s の記録が見つかりません。\n", args[0])
+			} else {
+				fmt.Printf("データの取得エラー: %v\n", err)
+			}
+			os.Exit(1)
+		}
+
+		// Create prompter
+		prompter := interactive.NewPrompter()
+
+		// Edit the entry
+		err = prompter.EditEntry(entry)
+		if err != nil {
+			fmt.Printf("編集エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Update the entry in the database
+		err = db.UpdateEntry(entry)
+		if err != nil {
+			fmt.Printf("データの更新エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("記録を更新しました！")
+
+		// Show the updated entry
+		fmt.Println("\n🦭 更新された記録 🦭")
+		fmt.Println("------------------------")
+		fmt.Printf("記録ID: %s [%s]\n", entry.ID, formatDate(entry.CreatedAt))
+		fmt.Printf("カテゴリ: %s\n", entry.Category)
+		if entry.ResearchTopic != "" {
+			fmt.Printf("調べたこと: %s\n", entry.ResearchTopic)
+		}
+		if entry.ProgramTitle != "" {
+			fmt.Printf("書いたプログラム: %s\n", entry.ProgramTitle)
+		}
+		fmt.Printf("満足度: %d/5\n", entry.Satisfaction)
+		fmt.Println("------------------------")
 	},
 }
 
@@ -102,7 +164,7 @@ var listCmd = &cobra.Command{
 		fmt.Println("------------------------")
 
 		for i, entry := range entries {
-			fmt.Printf("記録 #%d [%s]\n", i+1, formatDate(entry.CreatedAt))
+			fmt.Printf("記録 #%d [ID: %s] [%s]\n", i+1, entry.ID, formatDate(entry.CreatedAt))
 			fmt.Printf("カテゴリ: %s\n", entry.Category)
 
 			if entry.ResearchTopic != "" {
@@ -155,8 +217,9 @@ func init() {
 	defaultDBPath := filepath.Join(home, ".wamon", "github.com/econron/wamon.db")
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultDBPath, "Path to SQLite database file")
 
-	// Add list command
+	// Add commands
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(editCmd)
 
 	// Add category filter flag to list command
 	listCmd.Flags().StringVarP(&categoryFilter, "category", "c", "", "カテゴリでフィルタリング (調べ物, プログラマ, 調べてプログラマ)")

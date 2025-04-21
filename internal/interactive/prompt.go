@@ -22,6 +22,81 @@ func NewPrompter() *Prompter {
 	}
 }
 
+// EditEntry prompts the user to edit the entry content interactively with a TUI editor
+func (p *Prompter) EditEntry(entry *models.Entry) error {
+	fmt.Println("エントリの編集を開始します...")
+	fmt.Println("Ctrl+S で保存、ESC でキャンセルできます。")
+	fmt.Println("")
+
+	// Store original values for rollback if needed
+	origResearchTopic := entry.ResearchTopic
+	origProgramTitle := entry.ProgramTitle
+	origSatisfaction := entry.Satisfaction
+
+	// Edit research topic if applicable
+	if entry.Category == models.Research || entry.Category == models.ResearchAndProgram {
+		newContent, saved, err := EditText(entry.ResearchTopic, "調べたこと")
+		if err != nil {
+			return fmt.Errorf("編集エラー: %v", err)
+		}
+
+		if !saved {
+			fmt.Println("編集がキャンセルされました。")
+			return fmt.Errorf("キャンセルされました")
+		}
+
+		entry.ResearchTopic = newContent
+	}
+
+	// Edit program title if applicable
+	if entry.Category == models.Programming || entry.Category == models.ResearchAndProgram {
+		newContent, saved, err := EditText(entry.ProgramTitle, "書いたプログラム")
+		if err != nil {
+			return fmt.Errorf("編集エラー: %v", err)
+		}
+
+		if !saved {
+			// Rollback changes
+			entry.ResearchTopic = origResearchTopic
+			fmt.Println("編集がキャンセルされました。")
+			return fmt.Errorf("キャンセルされました")
+		}
+
+		entry.ProgramTitle = newContent
+	}
+
+	// Edit satisfaction level
+	// We'll use a simple prompt for satisfaction since it's just a number
+	fmt.Printf("現在の満足度: %d/5\n", entry.Satisfaction)
+	fmt.Println("新しい満足度を1-5で入力してください (そのままの場合はEnter):")
+	fmt.Print("> ")
+	input, err := p.reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+
+	input = strings.TrimSpace(input)
+	if input == "cancel" {
+		// Rollback changes
+		entry.ResearchTopic = origResearchTopic
+		entry.ProgramTitle = origProgramTitle
+		entry.Satisfaction = origSatisfaction
+		return fmt.Errorf("キャンセルされました")
+	} else if input == "done" {
+		return nil
+	} else if input != "" {
+		satisfaction, err := strconv.Atoi(input)
+		if err != nil || satisfaction < 1 || satisfaction > 5 {
+			fmt.Println("無効な満足度です。1から5の数字を入力してください。変更をスキップします。")
+		} else {
+			entry.Satisfaction = satisfaction
+		}
+	}
+
+	fmt.Println("編集が完了しました！")
+	return nil
+}
+
 // AskCategory prompts the user to select a category
 func (p *Prompter) AskCategory() (models.Category, error) {
 	fmt.Println("カテゴリを選択してください:")
