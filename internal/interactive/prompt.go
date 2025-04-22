@@ -199,3 +199,13 @@ func (p *Prompter) ShowSealMessage(satisfaction int) {
 func (p *Prompter) CheckForQuit(input string) bool {
 	return strings.ToLower(strings.TrimSpace(input)) == "quit"
 }
+
+// AskString prompts for a string input
+func (p *Prompter) AskString() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(input), nil
+}

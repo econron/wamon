@@ -6,6 +6,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/rivo/tview v0.0.0-20250330220935-949945f8d922
+	github.com/slack-go/slack v0.12.5
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	golang.org/x/term v0.28.0
@@ -15,6 +16,7 @@ require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

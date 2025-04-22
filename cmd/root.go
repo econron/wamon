@@ -29,9 +29,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/econron/wamon/internal/config"
 	"github.com/econron/wamon/internal/db"
 	"github.com/econron/wamon/internal/interactive"
 	"github.com/econron/wamon/internal/models"
+	"github.com/econron/wamon/internal/slack"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -183,6 +185,90 @@ var listCmd = &cobra.Command{
 	},
 }
 
+// reportCmd represents the command to send weekly report to Slack
+var reportCmd = &cobra.Command{
+	Use:   "report",
+	Short: "Slackに過去1週間の記録を送信",
+	Long: `過去1週間に記録したエントリをSlackに送信します。
+Slackの設定は~/.wamon.yamlで行います。`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize database
+		_, err := db.InitDB(dbPath)
+		if err != nil {
+			fmt.Printf("データベースの初期化エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Load configuration
+		appConfig, err := config.LoadConfig()
+		if err != nil {
+			fmt.Printf("設定の読み込みエラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Create prompter
+		prompter := interactive.NewPrompter()
+
+		// If Slack token is not configured, ask for it
+		if appConfig.Slack.Token == "" {
+			fmt.Println("SlackのBot User OAuth Tokenを入力してください（xoxb-で始まるトークン）:")
+			token, err := prompter.AskString()
+			if err != nil {
+				fmt.Printf("入力エラー: %v\n", err)
+				os.Exit(1)
+			}
+			if !strings.HasPrefix(token, "xoxb-") {
+				fmt.Println("無効なトークンです。Bot User OAuth Token（xoxb-で始まるトークン）を入力してください。")
+				os.Exit(1)
+			}
+			appConfig.Slack.Token = token
+		}
+
+		// If channel is not configured or empty, ask for it
+		if appConfig.Slack.Channel == "" {
+			fmt.Println("投稿先のSlackチャンネル名を入力してください（例: general）:")
+			channel, err := prompter.AskString()
+			if err != nil {
+				fmt.Printf("入力エラー: %v\n", err)
+				os.Exit(1)
+			}
+			appConfig.Slack.Channel = channel
+		}
+
+		// Save the configuration
+		err = config.SaveSlackConfig(appConfig.Slack.Token, appConfig.Slack.Channel)
+		if err != nil {
+			fmt.Printf("設定の保存エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get entries from the past week
+		entries, err := db.GetEntriesFromLastWeek()
+		if err != nil {
+			fmt.Printf("データの取得エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(entries) == 0 {
+			fmt.Println("過去1週間の記録がありません。")
+			return
+		}
+
+		// Initialize Slack client
+		slackClient := slack.NewClient(appConfig.Slack)
+
+		// Send the weekly report
+		err = slackClient.SendWeeklyReport(entries)
+		if err != nil {
+			fmt.Printf("Slackへの送信エラー: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("過去1週間の記録 (%d件) をSlackの #%s チャンネルに送信しました！\n",
+			len(entries), appConfig.Slack.Channel)
+	},
+}
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
@@ -220,6 +306,7 @@ func init() {
 	// Add commands
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(editCmd)
+	rootCmd.AddCommand(reportCmd)
 
 	// Add category filter flag to list command
 	listCmd.Flags().StringVarP(&categoryFilter, "category", "c", "", "カテゴリでフィルタリング (調べ物, プログラマ, 調べてプログラマ)")
@@ -242,6 +329,9 @@ func initConfig() {
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
+
+	// Set default configuration values
+	config.SetDefaults()
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

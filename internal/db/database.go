@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/econron/wamon/internal/models"
 
@@ -209,4 +210,42 @@ func GetEntryCount() (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM entries").Scan(&count)
 	return count, err
+}
+
+// GetEntriesFromLastWeek retrieves entries from the past 7 days
+func GetEntriesFromLastWeek() ([]*models.Entry, error) {
+	// Calculate the timestamp for 7 days ago
+	oneWeekAgo := time.Now().AddDate(0, 0, -7)
+
+	rows, err := db.Query(`
+		SELECT id, category, research_topic, program_title, satisfaction, created_at
+		FROM entries
+		WHERE created_at >= ?
+		ORDER BY created_at DESC
+	`, oneWeekAgo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []*models.Entry
+	for rows.Next() {
+		entry := &models.Entry{}
+		var category string
+		err := rows.Scan(
+			&entry.ID,
+			&category,
+			&entry.ResearchTopic,
+			&entry.ProgramTitle,
+			&entry.Satisfaction,
+			&entry.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		entry.Category = models.Category(category)
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
 }
