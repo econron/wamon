@@ -66,19 +66,19 @@ var editCmd = &cobra.Command{
 		// Initialize database
 		_, err := db.InitDB(dbPath)
 		if err != nil {
-			fmt.Printf("データベースの初期化エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
+			return
 		}
 
 		// Get the entry
 		entry, err := db.GetEntryByID(args[0])
 		if err != nil {
 			if err == sql.ErrNoRows {
-				fmt.Printf("ID %s の記録が見つかりません。\n", args[0])
+				fmt.Printf("ID %s の記録が見つかりません。\n正しいIDを指定してください。\n", args[0])
 			} else {
-				fmt.Printf("データの取得エラー: %v\n", err)
+				fmt.Printf("データの取得エラー: %v\n再度試してみてください。\n", err)
 			}
-			os.Exit(1)
+			return
 		}
 
 		// Create prompter
@@ -87,15 +87,16 @@ var editCmd = &cobra.Command{
 		// Edit the entry
 		err = prompter.EditEntry(entry)
 		if err != nil {
-			fmt.Printf("編集エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("編集エラー: %v\n編集をキャンセルしました。\n", err)
+			return
 		}
 
 		// Update the entry in the database
 		err = db.UpdateEntry(entry)
 		if err != nil {
 			fmt.Printf("データの更新エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Println("編集内容を保存できませんでした。再度試してみてください。")
+			return
 		}
 
 		fmt.Println("記録を更新しました！")
@@ -125,8 +126,8 @@ var listCmd = &cobra.Command{
 		// Initialize database
 		_, err := db.InitDB(dbPath)
 		if err != nil {
-			fmt.Printf("データベースの初期化エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
+			return
 		}
 
 		var entries []*models.Entry
@@ -152,7 +153,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if err != nil {
-			fmt.Printf("データの取得エラー: %v\n", err)
+			fmt.Printf("データの取得エラー: %v\n再度試してみてください。\n", err)
 			return
 		}
 
@@ -195,15 +196,15 @@ Slackの設定は~/.wamon.yamlで行います。`,
 		// Initialize database
 		_, err := db.InitDB(dbPath)
 		if err != nil {
-			fmt.Printf("データベースの初期化エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
+			return
 		}
 
 		// Load configuration
 		appConfig, err := config.LoadConfig()
 		if err != nil {
-			fmt.Printf("設定の読み込みエラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("設定の読み込みエラー: %v\n再度試してみてください。\n", err)
+			return
 		}
 
 		// Create prompter
@@ -214,12 +215,12 @@ Slackの設定は~/.wamon.yamlで行います。`,
 			fmt.Println("SlackのBot User OAuth Tokenを入力してください（xoxb-で始まるトークン）:")
 			token, err := prompter.AskString()
 			if err != nil {
-				fmt.Printf("入力エラー: %v\n", err)
-				os.Exit(1)
+				fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
+				return
 			}
 			if !strings.HasPrefix(token, "xoxb-") {
 				fmt.Println("無効なトークンです。Bot User OAuth Token（xoxb-で始まるトークン）を入力してください。")
-				os.Exit(1)
+				return
 			}
 			appConfig.Slack.Token = token
 		}
@@ -229,8 +230,8 @@ Slackの設定は~/.wamon.yamlで行います。`,
 			fmt.Println("投稿先のSlackチャンネル名を入力してください（例: general）:")
 			channel, err := prompter.AskString()
 			if err != nil {
-				fmt.Printf("入力エラー: %v\n", err)
-				os.Exit(1)
+				fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
+				return
 			}
 			appConfig.Slack.Channel = channel
 		}
@@ -239,14 +240,14 @@ Slackの設定は~/.wamon.yamlで行います。`,
 		err = config.SaveSlackConfig(appConfig.Slack.Token, appConfig.Slack.Channel)
 		if err != nil {
 			fmt.Printf("設定の保存エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Println("設定の保存に失敗しましたが、今回のレポート送信は続行します。")
 		}
 
 		// Get entries from the past week
 		entries, err := db.GetEntriesFromLastWeek()
 		if err != nil {
-			fmt.Printf("データの取得エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("データの取得エラー: %v\n再度試してみてください。\n", err)
+			return
 		}
 
 		if len(entries) == 0 {
@@ -261,7 +262,8 @@ Slackの設定は~/.wamon.yamlで行います。`,
 		err = slackClient.SendWeeklyReport(entries)
 		if err != nil {
 			fmt.Printf("Slackへの送信エラー: %v\n", err)
-			os.Exit(1)
+			fmt.Println("Slackトークンやチャンネル名が正しいか確認してください。")
+			return
 		}
 
 		fmt.Printf("過去1週間の記録 (%d件) をSlackの #%s チャンネルに送信しました！\n",
@@ -274,7 +276,8 @@ Slackの設定は~/.wamon.yamlで行います。`,
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1)
+		fmt.Println(err)
+		fmt.Println("コマンドの実行に失敗しました。--help オプションで使用方法を確認してください。")
 	}
 }
 
@@ -297,11 +300,14 @@ func init() {
 	// Add database path flag
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println("Error getting user home directory:", err)
-		os.Exit(1)
+		fmt.Println("ユーザーのホームディレクトリを取得できません:", err)
+		fmt.Println("デフォルトのデータベースパスを使用します。")
+		dbPath = ".wamon.db"
+	} else {
+		defaultDBPath := filepath.Join(home, ".wamon", "github.com/econron/wamon.db")
+		dbPath = defaultDBPath
 	}
-	defaultDBPath := filepath.Join(home, ".wamon", "github.com/econron/wamon.db")
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultDBPath, "Path to SQLite database file")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", dbPath, "Path to SQLite database file")
 
 	// Add commands
 	rootCmd.AddCommand(listCmd)
@@ -320,7 +326,11 @@ func initConfig() {
 	} else {
 		// Find home directory.
 		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
+		if err != nil {
+			fmt.Println("ユーザーのホームディレクトリを取得できません:", err)
+			fmt.Println("デフォルトのディレクトリを使用します。")
+			return
+		}
 
 		// Search config in home directory with name ".wamon" (without extension).
 		viper.AddConfigPath(home)
@@ -334,7 +344,7 @@ func initConfig() {
 	config.SetDefaults()
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
+	if err := viper.ReadInConfig(); err == nil && debugMode {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
 }
@@ -350,7 +360,9 @@ func runInteractiveJournal() {
 	_, err := db.InitDB(dbPath)
 	if err != nil {
 		fmt.Printf("データベースの初期化エラー: %v\n", err)
-		os.Exit(1)
+		fmt.Println("データベースの初期化に失敗しました。パスを確認して再度試してみてください。")
+		fmt.Printf("現在のデータベースパス: %s\n", dbPath)
+		return
 	}
 
 	if debugMode {
@@ -368,6 +380,7 @@ func runInteractiveJournal() {
 		category, err := prompter.AskCategory()
 		if err != nil {
 			fmt.Printf("エラー: %v\n", err)
+			fmt.Println("もう一度試してください。")
 			continue
 		}
 
@@ -390,6 +403,7 @@ func runInteractiveJournal() {
 					return
 				}
 				fmt.Printf("エラー: %v\n", err)
+				fmt.Println("もう一度試してください。")
 				continue
 			}
 			entry.ResearchTopic = topic
@@ -402,6 +416,7 @@ func runInteractiveJournal() {
 					return
 				}
 				fmt.Printf("エラー: %v\n", err)
+				fmt.Println("もう一度試してください。")
 				continue
 			}
 			entry.ProgramTitle = program
@@ -415,6 +430,7 @@ func runInteractiveJournal() {
 					return
 				}
 				fmt.Printf("エラー: %v\n", err)
+				fmt.Println("もう一度試してください。")
 				continue
 			}
 			entry.ResearchTopic = topic
@@ -427,6 +443,7 @@ func runInteractiveJournal() {
 					return
 				}
 				fmt.Printf("エラー: %v\n", err)
+				fmt.Println("もう一度試してください。")
 				continue
 			}
 			entry.ProgramTitle = program
@@ -436,6 +453,7 @@ func runInteractiveJournal() {
 		satisfaction, err := prompter.AskSatisfaction()
 		if err != nil {
 			fmt.Printf("エラー: %v\n", err)
+			fmt.Println("満足度は1から5の数字で入力してください。もう一度試してください。")
 			continue
 		}
 		entry.Satisfaction = satisfaction
@@ -444,6 +462,8 @@ func runInteractiveJournal() {
 		err = db.SaveEntry(entry)
 		if err != nil {
 			fmt.Printf("エラー (データの保存): %v\n", err)
+			fmt.Println("記録の保存に失敗しました。もう一度試してみてください。")
+			continue
 		} else if debugMode {
 			fmt.Printf("データを保存しました: ID=%s\n", entry.ID)
 		}

@@ -23,7 +23,10 @@ func NewSimpleEditor(initialContent string) (*SimpleEditor, error) {
 	// Get terminal size
 	width, height, err := term.GetSize(int(os.Stdin.Fd()))
 	if err != nil {
-		return nil, err
+		fmt.Println("ターミナルサイズの取得に失敗しました。デフォルトサイズを使用します。")
+		// Use default values if term size can't be determined
+		width = 80
+		height = 24
 	}
 
 	// Split content into lines
@@ -47,9 +50,18 @@ func (e *SimpleEditor) Run() (string, bool, error) {
 	// Switch to raw mode
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return "", false, err
+		fmt.Println("ターミナルの設定に失敗しました。システムの互換性が低い可能性があります。")
+		fmt.Println("外部エディタを試すことをお勧めします。EDITOR環境変数を設定してください。")
+		return strings.Join(e.content, "\n"), false, fmt.Errorf("エディタの起動に失敗しました: %v", err)
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	// Make sure we restore terminal state no matter what
+	defer func() {
+		if restoreErr := term.Restore(int(os.Stdin.Fd()), oldState); restoreErr != nil {
+			fmt.Printf("ターミナル状態の復元に失敗しました: %v\n", restoreErr)
+			fmt.Println("ターミナルが正常に表示されない場合は、reset コマンドを実行してください。")
+		}
+	}()
 
 	// Clear screen and show initial content
 	e.refreshScreen()
@@ -60,18 +72,26 @@ func (e *SimpleEditor) Run() (string, bool, error) {
 		buf := make([]byte, 3)
 		n, err := os.Stdin.Read(buf)
 		if err != nil {
-			return "", false, err
+			// Convert back to normal terminal mode before returning error
+			term.Restore(int(os.Stdin.Fd()), oldState)
+			return strings.Join(e.content, "\n"), false, fmt.Errorf("キー入力の読み取りに失敗しました: %v", err)
 		}
 
 		// Handle key
 		if n == 1 {
 			switch buf[0] {
 			case 3: // Ctrl+C
+				term.Restore(int(os.Stdin.Fd()), oldState)
+				fmt.Println("\n編集をキャンセルしました。")
 				return strings.Join(e.content, "\n"), false, nil
 			case 19: // Ctrl+S
 				e.saved = true
+				term.Restore(int(os.Stdin.Fd()), oldState)
+				fmt.Println("\n変更を保存しました。")
 				return strings.Join(e.content, "\n"), true, nil
 			case 27: // ESC
+				term.Restore(int(os.Stdin.Fd()), oldState)
+				fmt.Println("\n編集をキャンセルしました。")
 				return strings.Join(e.content, "\n"), false, nil
 			case 13: // Enter
 				// Insert a new line
@@ -197,7 +217,13 @@ func (e *SimpleEditor) refreshScreen() {
 func SimpleEditText(initialContent string) (string, bool, error) {
 	editor, err := NewSimpleEditor(initialContent)
 	if err != nil {
-		return "", false, err
+		fmt.Println("エディタの初期化に失敗しました。外部エディタを試します。")
+		// Fallback to external editor
+		content, err := EditWithExternalEditor(initialContent)
+		if err != nil {
+			return initialContent, false, fmt.Errorf("テキスト編集に失敗しました: %v", err)
+		}
+		return content, true, nil
 	}
 
 	return editor.Run()

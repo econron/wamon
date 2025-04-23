@@ -37,6 +37,8 @@ func (p *Prompter) EditEntry(entry *models.Entry) error {
 	if entry.Category == models.Research || entry.Category == models.ResearchAndProgram {
 		newContent, saved, err := EditText(entry.ResearchTopic, "調べたこと")
 		if err != nil {
+			fmt.Printf("テキストエディタでエラーが発生しました: %v\n", err)
+			fmt.Println("編集操作を中断します。")
 			return fmt.Errorf("編集エラー: %v", err)
 		}
 
@@ -52,6 +54,10 @@ func (p *Prompter) EditEntry(entry *models.Entry) error {
 	if entry.Category == models.Programming || entry.Category == models.ResearchAndProgram {
 		newContent, saved, err := EditText(entry.ProgramTitle, "書いたプログラム")
 		if err != nil {
+			fmt.Printf("テキストエディタでエラーが発生しました: %v\n", err)
+			fmt.Println("元の内容に戻します。")
+			// Rollback changes
+			entry.ResearchTopic = origResearchTopic
 			return fmt.Errorf("編集エラー: %v", err)
 		}
 
@@ -72,6 +78,8 @@ func (p *Prompter) EditEntry(entry *models.Entry) error {
 	fmt.Print("> ")
 	input, err := p.reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
+		fmt.Println("元の満足度を保持します。")
 		return err
 	}
 
@@ -107,6 +115,7 @@ func (p *Prompter) AskCategory() (models.Category, error) {
 
 	input, err := p.reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
 		return "", err
 	}
 
@@ -125,7 +134,7 @@ func (p *Prompter) AskCategory() (models.Category, error) {
 	case "3":
 		return models.ResearchAndProgram, nil
 	default:
-		return "", fmt.Errorf("無効な選択です")
+		return "", fmt.Errorf("無効な選択です。1, 2, または 3 を入力してください。")
 	}
 }
 
@@ -136,6 +145,7 @@ func (p *Prompter) AskResearchTopic() (string, error) {
 
 	input, err := p.reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
 		return "", err
 	}
 
@@ -149,6 +159,7 @@ func (p *Prompter) AskProgramTitle() (string, error) {
 
 	input, err := p.reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
 		return "", err
 	}
 
@@ -162,6 +173,7 @@ func (p *Prompter) AskSatisfaction() (int, error) {
 
 	input, err := p.reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
 		return 0, err
 	}
 
@@ -205,6 +217,7 @@ func (p *Prompter) AskString() (string, error) {
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {
+		fmt.Printf("入力の読み取りエラー: %v\n", err)
 		return "", err
 	}
 	return strings.TrimSpace(input), nil

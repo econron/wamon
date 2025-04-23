@@ -1,6 +1,8 @@
 package interactive
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -64,6 +66,8 @@ func NewEditor(initialContent string, title string) *Editor {
 // Run starts the editor and returns the edited content
 func (e *Editor) Run() (string, bool, error) {
 	if err := e.app.Run(); err != nil {
+		fmt.Printf("テキストエディタでエラーが発生しました: %v\n", err)
+		fmt.Println("代替のエディタを試みます。")
 		return "", false, err
 	}
 	return e.content, e.saved, nil
@@ -71,6 +75,27 @@ func (e *Editor) Run() (string, bool, error) {
 
 // EditText opens an editor for text content
 func EditText(initialContent, title string) (string, bool, error) {
+	// First try our rich text editor
 	editor := NewEditor(initialContent, title)
-	return editor.Run()
+	content, saved, err := editor.Run()
+
+	// If the rich editor fails, try the simpler one
+	if err != nil {
+		fmt.Println("高度なエディタに失敗しました。シンプルエディタに切り替えます。")
+		return SimpleEditText(initialContent)
+	}
+
+	// If the simple editor fails too, try external editor as last resort
+	if err != nil {
+		fmt.Println("シンプルエディタに失敗しました。外部エディタを使用します。")
+		externalContent, externalErr := EditWithExternalEditor(initialContent)
+		if externalErr != nil {
+			fmt.Printf("外部エディタも失敗しました: %v\n", externalErr)
+			fmt.Println("編集操作をキャンセルします。")
+			return initialContent, false, fmt.Errorf("すべてのエディタが失敗しました。環境変数 EDITOR を設定してみてください")
+		}
+		return externalContent, true, nil
+	}
+
+	return content, saved, nil
 }
