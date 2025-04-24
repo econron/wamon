@@ -448,3 +448,77 @@ func TestBackwardCompatibility(t *testing.T) {
 	assert.NotNil(t, sqlDB)
 	defer sqlDB.Close()
 }
+
+func TestGetEntriesSince(t *testing.T) {
+	// Setup test database
+	db := setupTestDB(t)
+
+	// Create test entries with different timestamps
+	now := time.Now()
+	entries := []*models.Entry{
+		{
+			ID:            "old_entry",
+			Category:      models.Research,
+			ResearchTopic: "Old research topic",
+			ProgramTitle:  "",
+			Satisfaction:  3,
+			CreatedAt:     now.Add(-72 * time.Hour), // 3 days ago
+		},
+		{
+			ID:            "medium_entry",
+			Category:      models.Programming,
+			ResearchTopic: "",
+			ProgramTitle:  "Medium program",
+			Satisfaction:  4,
+			CreatedAt:     now.Add(-36 * time.Hour), // 1.5 days ago
+		},
+		{
+			ID:            "recent_entry",
+			Category:      models.ResearchAndProgram,
+			ResearchTopic: "Recent research",
+			ProgramTitle:  "Recent program",
+			Satisfaction:  5,
+			CreatedAt:     now.Add(-12 * time.Hour), // 12 hours ago
+		},
+	}
+
+	// Save entries to database
+	for _, entry := range entries {
+		err := db.SaveEntry(entry)
+		assert.NoError(t, err)
+	}
+
+	// テストケース1: 48時間以内のエントリを取得
+	cutoff := now.Add(-48 * time.Hour)
+	recentEntries, err := db.GetEntriesSince(cutoff)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(recentEntries)) // medium_entryとrecent_entryのみ取得されるはず
+
+	// 取得したエントリのIDを確認
+	entryIDs := make([]string, 0, len(recentEntries))
+	for _, entry := range recentEntries {
+		entryIDs = append(entryIDs, entry.ID)
+	}
+	assert.Contains(t, entryIDs, "medium_entry")
+	assert.Contains(t, entryIDs, "recent_entry")
+	assert.NotContains(t, entryIDs, "old_entry") // 3日前のエントリは含まれないはず
+
+	// テストケース2: 24時間以内のエントリを取得
+	cutoff = now.Add(-24 * time.Hour)
+	veryRecentEntries, err := db.GetEntriesSince(cutoff)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(veryRecentEntries)) // recent_entryのみ取得されるはず
+	assert.Equal(t, "recent_entry", veryRecentEntries[0].ID)
+
+	// テストケース3: 未来の時刻を指定した場合（該当するエントリなし）
+	futureCutoff := now.Add(24 * time.Hour)
+	futureEntries, err := db.GetEntriesSince(futureCutoff)
+	assert.NoError(t, err)
+	assert.Empty(t, futureEntries) // エントリが取得されないはず
+
+	// テストケース4: 1週間前を指定した場合（すべてのエントリを取得）
+	pastCutoff := now.Add(-7 * 24 * time.Hour)
+	allEntries, err := db.GetEntriesSince(pastCutoff)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(allEntries)) // 全てのエントリが取得されるはず
+}

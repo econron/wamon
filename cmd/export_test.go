@@ -216,6 +216,98 @@ func TestExportEmptyDatabase(t *testing.T) {
 	assert.Empty(t, strings.TrimSpace(string(data)))
 }
 
+// TestExportCmdWithSince tests the export command with the --since flag
+func TestExportCmdWithSince(t *testing.T) {
+	// テストディレクトリを作成
+	tempDir, err := os.MkdirTemp("", "wamon-export-since-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// テスト用DBファイルのパスを設定
+	testDBPath := filepath.Join(tempDir, "test.db")
+	originalDBPath := dbPath
+	dbPath = testDBPath
+	defer func() {
+		dbPath = originalDBPath
+	}()
+
+	// テスト用のデータベースを作成
+	database, err := db.NewDB(testDBPath)
+	assert.NoError(t, err)
+	defer database.Close()
+
+	// 現在時刻を基準にしたエントリを作成
+	now := time.Now()
+	testEntries := []*models.Entry{
+		{
+			ID:            "entry1",
+			Category:      models.Research,
+			ResearchTopic: "Old entry",
+			ProgramTitle:  "",
+			Satisfaction:  4,
+			CreatedAt:     now.Add(-48 * time.Hour), // 48時間前
+		},
+		{
+			ID:            "entry2",
+			Category:      models.Programming,
+			ResearchTopic: "",
+			ProgramTitle:  "Recent entry",
+			Satisfaction:  5,
+			CreatedAt:     now.Add(-12 * time.Hour), // 12時間前
+		},
+		{
+			ID:            "entry3",
+			Category:      models.ResearchAndProgram,
+			ResearchTopic: "Very recent entry",
+			ProgramTitle:  "Testing",
+			Satisfaction:  3,
+			CreatedAt:     now.Add(-1 * time.Hour), // 1時間前
+		},
+	}
+
+	// エントリをデータベースに保存
+	for _, entry := range testEntries {
+		err := database.SaveEntry(entry)
+		assert.NoError(t, err)
+	}
+
+	// テスト用のエクスポートファイルのパスを設定
+	testExportPath := filepath.Join(tempDir, "export_since.json")
+
+	// --since フラグを設定してエクスポートコマンドを実行 (24時間以内のエントリのみ)
+	exportCmd.Flags().Set("since", "24h")
+	exportCmd.Run(exportCmd, []string{testExportPath})
+	exportCmd.Flags().Set("since", "") // 後のテストに影響しないようにリセット
+
+	// エクスポートされたファイルが存在することを確認
+	_, err = os.Stat(testExportPath)
+	assert.NoError(t, err)
+
+	// エクスポートされたデータを読み込み
+	data, err := os.ReadFile(testExportPath)
+	assert.NoError(t, err)
+
+	// 各行が有効なJSONであることを確認
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	// 過去24時間のエントリのみエクスポートされていることを確認 (entry2と3のみ)
+	assert.Equal(t, 2, len(lines))
+
+	// 各エントリを検証
+	exportedIDs := make([]string, 0)
+	for _, line := range lines {
+		var exportedEntry ExportedEntry
+		err := json.Unmarshal([]byte(line), &exportedEntry)
+		assert.NoError(t, err)
+		exportedIDs = append(exportedIDs, exportedEntry.ID)
+	}
+
+	// 期待されるIDが含まれていることを確認
+	assert.Contains(t, exportedIDs, "entry2")
+	assert.Contains(t, exportedIDs, "entry3")
+	assert.NotContains(t, exportedIDs, "entry1") // 48時間前のエントリは含まれないはず
+}
+
 // createExportTestEntries テスト用のエントリを作成するヘルパー関数
 func createExportTestEntries(t *testing.T) []*models.Entry {
 	return []*models.Entry{

@@ -165,3 +165,92 @@ func TestExportEntriesErrorHandling(t *testing.T) {
 	err = db.(*SQLiteDB).ExportEntries(tempDir)
 	assert.Error(t, err)
 }
+
+func TestExportEntriesSince(t *testing.T) {
+	// Setup test database with some entries
+	db := setupTestDB(t)
+
+	// Create test entries with different timestamps
+	entries := []*models.Entry{
+		{
+			ID:            "20220101120000",
+			Category:      models.Research,
+			ResearchTopic: "Old entry",
+			ProgramTitle:  "",
+			Satisfaction:  4,
+			CreatedAt:     time.Date(2022, 1, 1, 12, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:            "20220102130000",
+			Category:      models.Programming,
+			ResearchTopic: "",
+			ProgramTitle:  "Medium entry",
+			Satisfaction:  5,
+			CreatedAt:     time.Date(2022, 1, 2, 13, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:            "20220103140000",
+			Category:      models.ResearchAndProgram,
+			ResearchTopic: "Recent entry",
+			ProgramTitle:  "Testing",
+			Satisfaction:  3,
+			CreatedAt:     time.Date(2022, 1, 3, 14, 0, 0, 0, time.UTC),
+		},
+	}
+
+	// Save entries to database
+	for _, entry := range entries {
+		err := db.SaveEntry(entry)
+		assert.NoError(t, err)
+	}
+
+	// Create temporary file for export
+	tempFile, err := os.CreateTemp("", "wamon-export-since-*.json")
+	assert.NoError(t, err)
+	tempFile.Close()
+	defer os.Remove(tempFile.Name())
+
+	// Set a cutoff date to filter by (include only entries from January 2, 2022 and later)
+	cutoffDate := time.Date(2022, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	// Test ExportEntriesSince
+	err = db.(*SQLiteDB).ExportEntriesSince(tempFile.Name(), cutoffDate)
+	assert.NoError(t, err)
+
+	// Read exported file and verify contents
+	exportedData, err := os.ReadFile(tempFile.Name())
+	assert.NoError(t, err)
+
+	// Split by newlines to get individual JSON objects
+	lines := splitLines(string(exportedData))
+	assert.Equal(t, 2, len(lines)) // Should only include the two most recent entries
+
+	// Parse each line and verify the entries are the correct ones
+	var exportedIDs []string
+	for _, line := range lines {
+		var exportedEntry map[string]interface{}
+		err := json.Unmarshal([]byte(line), &exportedEntry)
+		assert.NoError(t, err)
+		exportedIDs = append(exportedIDs, exportedEntry["id"].(string))
+	}
+
+	// Check that we only have the two most recent entries
+	assert.Contains(t, exportedIDs, "20220102130000")
+	assert.Contains(t, exportedIDs, "20220103140000")
+	assert.NotContains(t, exportedIDs, "20220101120000") // This one should be filtered out
+
+	// Test with a cutoff that excludes all entries
+	futureCutoff := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	tempEmptyFile, err := os.CreateTemp("", "wamon-export-empty-since-*.json")
+	assert.NoError(t, err)
+	tempEmptyFile.Close()
+	defer os.Remove(tempEmptyFile.Name())
+
+	err = db.(*SQLiteDB).ExportEntriesSince(tempEmptyFile.Name(), futureCutoff)
+	assert.NoError(t, err)
+
+	// Empty file should exist but have no entries
+	emptyExportedData, err := os.ReadFile(tempEmptyFile.Name())
+	assert.NoError(t, err)
+	assert.Empty(t, string(emptyExportedData))
+}
