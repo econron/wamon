@@ -1,24 +1,26 @@
+# release.yml の修正案
 name: Release
 on:
   push:
     tags: ["v*"]
 jobs:
   release:
-    runs-on: macos-latest # Linux から macOS へ変更
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4 # v4 を推奨
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5 # v5 を推奨
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22.5'
           cache: true
-      # C build tools のインストールステップは不要なので削除
-      - uses: goreleaser/goreleaser-action@v5 # v5 を推奨
+      - uses: goreleaser/goreleaser-action@v5
         with:
+          # ↓ GoReleaser v2系の最新版を使うことを明示的に指定
+          version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Releases作成用に必要
-          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }} # Tap更新用に設定したPAT
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
