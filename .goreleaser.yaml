@@ -1,0 +1,108 @@
+# This is an example .goreleaser.yml file with some sensible defaults.
+# Make sure to check the documentation at https://goreleaser.com
+
+# The lines below are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/need to use them.
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+    # you may remove this if you don't need go generate
+    - go generate ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+
+archives:
+  - formats: [tar.gz]
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+
+# Homebrew Tap の設定
+brews:
+  - # Formulaファイルの名前になります (例: wamon.rb)
+    name: wamon
+
+    # Git author used to commit to the repository.
+    commit_author:
+      name: goreleaserbot
+      email: bot@example.com # 任意に変更可能
+
+    # The project name and current git tag are used in the format string.
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+
+    # Repository to push the generated formula to.
+    repository:
+      # Repository owner.
+      owner: econron
+      # Repository name.
+      name: homebrew-wamon
+      # Repository branch.
+      branch: main
+      # 環境変数 GITHUB_TOKEN からTapリポジトリへの書き込み権限を持つPATを読み込みます
+      token: "{{ .Env.GITHUB_TOKEN }}"
+
+    # Directory inside the repository to put the formula.
+    directory: Formula
+
+    # ツールのホームページURL
+    homepage: "https://github.com/econron/wamon"
+
+    # ツールの短い説明 (brew search などで表示されます)
+    description: "wamon - A CLI tool related to WAON points or services (仮)" # ★ ここは必ずツールに合わせて変更してください
+
+    # ツール本体のライセンス (SPDX ID形式で指定してください)
+    # 例: "MIT", "Apache-2.0" など。wamonリポジトリのLICENSEファイルと一致させます。
+    license: "MIT" # ★ 必ずツールに合わせて変更してください
+
+    # Formula内の `install` ブロックに記述される内容
+    # GoReleaserがビルドしたバイナリをインストールするコマンドを記述します
+    install: |
+      bin.install "wamon"
+      # もし、設定ファイルやシェルの補完スクリプトなども配布する場合は以下のように追加します
+      # etc.install "path/to/your/config.yaml" => "wamon.yaml" # 設定ファイル例
+      # zsh_completion.install "completions/wamon.zsh" => "_wamon" # Zsh補完例
+      # bash_completion.install "completions/wamon.bash"          # Bash補完例
+      # fish_completion.install "completions/wamon.fish"          # Fish補完例
+
+    # Formula内の `test do` ブロックに記述される内容
+    # インストール後に簡単な動作確認を行うコマンドを記述します
+    test: |
+      # 例1: ヘルプコマンドがエラーなく実行できればOKとする
+      system "#{bin}/wamon", "--help"
+      # 例2: バージョンコマンドの出力に特定の文字列が含まれるか確認する
+      assert_match "wamon version", shell_output("#{bin}/wamon --version")
