@@ -31,9 +31,10 @@ builds:
       - goos: windows
         goarch: arm64
 
+# .goreleaser.yml (修正後)
 archives:
-  - formats: [tar.gz]
-    # this name template makes the OS and Arch compatible with the results of `uname`.
+  # ↓ "formats" を "format" に、値を文字列に変更
+  - format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -41,10 +42,10 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
     format_overrides:
       - goos: windows
-        formats: [zip]
+        # ↓ "formats" を "format" に、値を文字列に変更
+        format: zip
 
 changelog:
   sort: asc
