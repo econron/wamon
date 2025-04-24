@@ -1,4 +1,4 @@
-# release.yml の修正案
+# release.yml
 name: Release
 on:
   push:
@@ -18,8 +18,8 @@ jobs:
           cache: true
       - uses: goreleaser/goreleaser-action@v5
         with:
-          # ↓ GoReleaser v2系の最新版を使うことを明示的に指定
-          version: latest
+          # ↓ 'latest' の代わりに具体的な v2 バージョンを指定 (例: v2.0.1)
+          version: v2.0.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
