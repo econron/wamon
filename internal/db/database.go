@@ -12,38 +12,85 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// DB is the interface for database operations
+type DB interface {
+	SaveEntry(entry *models.Entry) error
+	UpdateEntry(entry *models.Entry) error
+	GetAllEntries() ([]*models.Entry, error)
+	GetEntriesByCategory(category models.Category) ([]*models.Entry, error)
+	GetEntryByID(id string) (*models.Entry, error)
+	GetEntryCount() (int, error)
+	GetEntriesFromLastWeek() ([]*models.Entry, error)
+	Close() error
+}
+
+// SQLiteDB implements the DB interface with SQLite
+type SQLiteDB struct {
+	db *sql.DB
+}
+
 var (
-	db   *sql.DB
-	once sync.Once
+	instance *SQLiteDB
+	once     sync.Once
 )
 
-// InitDB initializes the database and creates tables if they don't exist
-func InitDB(dbPath string) (*sql.DB, error) {
+// NewDB creates a new DB instance with dependency injection
+func NewDB(dbPath string) (DB, error) {
+	var err error
+	db, err := initDB(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &SQLiteDB{db: db}, nil
+}
+
+// GetDB returns a global singleton instance of the database
+// This is maintained for backward compatibility but should be avoided
+// in favor of dependency injection with NewDB
+func GetDB(dbPath string) (DB, error) {
 	var err error
 	once.Do(func() {
-		// Ensure directory exists
-		if dbPath != ":memory:" {
-			dirPath := filepath.Dir(dbPath)
-			if dirPath != "." && dirPath != "" {
-				// Ensure the directory exists
-				err = createDirIfNotExists(dirPath)
-				if err != nil {
-					return
-				}
-			}
-		}
-
-		// Open the database
-		db, err = sql.Open("sqlite3", dbPath)
+		var db *sql.DB
+		db, err = initDB(dbPath)
 		if err != nil {
 			return
 		}
-
-		// Create tables if they don't exist
-		err = createTables()
+		instance = &SQLiteDB{db: db}
 	})
+	if err != nil {
+		return nil, err
+	}
+	return instance, nil
+}
 
-	return db, err
+// initDB initializes the database and creates tables if they don't exist
+func initDB(dbPath string) (*sql.DB, error) {
+	// Ensure directory exists
+	if dbPath != ":memory:" {
+		dirPath := filepath.Dir(dbPath)
+		if dirPath != "." && dirPath != "" {
+			// Ensure the directory exists
+			err := createDirIfNotExists(dirPath)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Open the database
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create tables if they don't exist
+	err = createTables(db)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return db, nil
 }
 
 // createDirIfNotExists creates a directory if it doesn't exist
@@ -55,7 +102,7 @@ func createDirIfNotExists(dirPath string) error {
 }
 
 // createTables creates the necessary tables
-func createTables() error {
+func createTables(db *sql.DB) error {
 	// Create entries table
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS entries (
@@ -70,9 +117,17 @@ func createTables() error {
 	return err
 }
 
+// Close closes the database connection
+func (s *SQLiteDB) Close() error {
+	if s.db != nil {
+		return s.db.Close()
+	}
+	return nil
+}
+
 // SaveEntry saves an entry to the database
-func SaveEntry(entry *models.Entry) error {
-	_, err := db.Exec(
+func (s *SQLiteDB) SaveEntry(entry *models.Entry) error {
+	_, err := s.db.Exec(
 		`INSERT INTO entries (id, category, research_topic, program_title, satisfaction, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		entry.ID,
@@ -86,8 +141,8 @@ func SaveEntry(entry *models.Entry) error {
 }
 
 // UpdateEntry updates an existing entry in the database
-func UpdateEntry(entry *models.Entry) error {
-	result, err := db.Exec(
+func (s *SQLiteDB) UpdateEntry(entry *models.Entry) error {
+	result, err := s.db.Exec(
 		`UPDATE entries 
 		 SET category = ?, research_topic = ?, program_title = ?, satisfaction = ?
 		 WHERE id = ?`,
@@ -114,8 +169,8 @@ func UpdateEntry(entry *models.Entry) error {
 }
 
 // GetAllEntries retrieves all entries from the database
-func GetAllEntries() ([]*models.Entry, error) {
-	rows, err := db.Query(`
+func (s *SQLiteDB) GetAllEntries() ([]*models.Entry, error) {
+	rows, err := s.db.Query(`
 		SELECT id, category, research_topic, program_title, satisfaction, created_at
 		FROM entries
 		ORDER BY created_at DESC
@@ -148,8 +203,8 @@ func GetAllEntries() ([]*models.Entry, error) {
 }
 
 // GetEntriesByCategory retrieves entries by category
-func GetEntriesByCategory(category models.Category) ([]*models.Entry, error) {
-	rows, err := db.Query(`
+func (s *SQLiteDB) GetEntriesByCategory(category models.Category) ([]*models.Entry, error) {
+	rows, err := s.db.Query(`
 		SELECT id, category, research_topic, program_title, satisfaction, created_at
 		FROM entries
 		WHERE category = ?
@@ -183,10 +238,10 @@ func GetEntriesByCategory(category models.Category) ([]*models.Entry, error) {
 }
 
 // GetEntryByID retrieves an entry by ID
-func GetEntryByID(id string) (*models.Entry, error) {
+func (s *SQLiteDB) GetEntryByID(id string) (*models.Entry, error) {
 	entry := &models.Entry{}
 	var category string
-	err := db.QueryRow(`
+	err := s.db.QueryRow(`
 		SELECT id, category, research_topic, program_title, satisfaction, created_at
 		FROM entries
 		WHERE id = ?
@@ -206,18 +261,18 @@ func GetEntryByID(id string) (*models.Entry, error) {
 }
 
 // GetEntryCount returns the total number of entries
-func GetEntryCount() (int, error) {
+func (s *SQLiteDB) GetEntryCount() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM entries").Scan(&count)
+	err := s.db.QueryRow("SELECT COUNT(*) FROM entries").Scan(&count)
 	return count, err
 }
 
 // GetEntriesFromLastWeek retrieves entries from the past 7 days
-func GetEntriesFromLastWeek() ([]*models.Entry, error) {
+func (s *SQLiteDB) GetEntriesFromLastWeek() ([]*models.Entry, error) {
 	// Calculate the timestamp for 7 days ago
 	oneWeekAgo := time.Now().AddDate(0, 0, -7)
 
-	rows, err := db.Query(`
+	rows, err := s.db.Query(`
 		SELECT id, category, research_topic, program_title, satisfaction, created_at
 		FROM entries
 		WHERE created_at >= ?
@@ -248,4 +303,13 @@ func GetEntriesFromLastWeek() ([]*models.Entry, error) {
 	}
 
 	return entries, nil
+}
+
+// Backward compatibility functions that use the global db instance
+// These should be avoided in new code in favor of using the DB interface
+
+// InitDB initializes the database and creates tables if they don't exist
+// Deprecated: Use NewDB instead
+func InitDB(dbPath string) (*sql.DB, error) {
+	return initDB(dbPath)
 }

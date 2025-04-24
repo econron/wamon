@@ -64,14 +64,15 @@ var editCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize database
-		_, err := db.InitDB(dbPath)
+		database, err := db.NewDB(dbPath)
 		if err != nil {
 			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
 			return
 		}
+		defer database.Close()
 
 		// Get the entry
-		entry, err := db.GetEntryByID(args[0])
+		entry, err := database.GetEntryByID(args[0])
 		if err != nil {
 			if err == sql.ErrNoRows {
 				fmt.Printf("ID %s の記録が見つかりません。\n正しいIDを指定してください。\n", args[0])
@@ -92,7 +93,7 @@ var editCmd = &cobra.Command{
 		}
 
 		// Update the entry in the database
-		err = db.UpdateEntry(entry)
+		err = database.UpdateEntry(entry)
 		if err != nil {
 			fmt.Printf("データの更新エラー: %v\n", err)
 			fmt.Println("編集内容を保存できませんでした。再度試してみてください。")
@@ -124,11 +125,12 @@ var listCmd = &cobra.Command{
 	Long:  "過去に記録したエントリを一覧表示します。カテゴリでフィルタリングすることもできます。",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize database
-		_, err := db.InitDB(dbPath)
+		database, err := db.NewDB(dbPath)
 		if err != nil {
 			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
 			return
 		}
+		defer database.Close()
 
 		var entries []*models.Entry
 		var filter models.Category
@@ -137,16 +139,16 @@ var listCmd = &cobra.Command{
 		switch strings.ToLower(categoryFilter) {
 		case "research", "調べ物":
 			filter = models.Research
-			entries, err = db.GetEntriesByCategory(filter)
+			entries, err = database.GetEntriesByCategory(filter)
 		case "programming", "プログラマ":
 			filter = models.Programming
-			entries, err = db.GetEntriesByCategory(filter)
+			entries, err = database.GetEntriesByCategory(filter)
 		case "both", "調べてプログラマ":
 			filter = models.ResearchAndProgram
-			entries, err = db.GetEntriesByCategory(filter)
+			entries, err = database.GetEntriesByCategory(filter)
 		case "":
 			// No filter, get all entries
-			entries, err = db.GetAllEntries()
+			entries, err = database.GetAllEntries()
 		default:
 			fmt.Println("無効なカテゴリです。有効なカテゴリ: 調べ物, プログラマ, 調べてプログラマ")
 			return
@@ -194,11 +196,12 @@ var reportCmd = &cobra.Command{
 Slackの設定は~/.wamon.yamlで行います。`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize database
-		_, err := db.InitDB(dbPath)
+		database, err := db.NewDB(dbPath)
 		if err != nil {
 			fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
 			return
 		}
+		defer database.Close()
 
 		// Load configuration
 		appConfig, err := config.LoadConfig()
@@ -244,7 +247,7 @@ Slackの設定は~/.wamon.yamlで行います。`,
 		}
 
 		// Get entries from the past week
-		entries, err := db.GetEntriesFromLastWeek()
+		entries, err := database.GetEntriesFromLastWeek()
 		if err != nil {
 			fmt.Printf("データの取得エラー: %v\n再度試してみてください。\n", err)
 			return
@@ -255,19 +258,14 @@ Slackの設定は~/.wamon.yamlで行います。`,
 			return
 		}
 
-		// Initialize Slack client
-		slackClient := slack.NewClient(appConfig.Slack)
-
-		// Send the weekly report
-		err = slackClient.SendWeeklyReport(entries)
+		// Send to Slack
+		err = slack.SendWeeklyReport(appConfig.Slack.Token, appConfig.Slack.Channel, entries)
 		if err != nil {
-			fmt.Printf("Slackへの送信エラー: %v\n", err)
-			fmt.Println("Slackトークンやチャンネル名が正しいか確認してください。")
+			fmt.Printf("Slackへの送信エラー: %v\n再度試してみてください。\n", err)
 			return
 		}
 
-		fmt.Printf("過去1週間の記録 (%d件) をSlackの #%s チャンネルに送信しました！\n",
-			len(entries), appConfig.Slack.Channel)
+		fmt.Printf("過去1週間の記録 (%d件) をSlackチャンネル #%s に送信しました！\n", len(entries), appConfig.Slack.Channel)
 	},
 }
 
@@ -276,46 +274,28 @@ Slackの設定は~/.wamon.yamlで行います。`,
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		fmt.Println(err)
-		fmt.Println("コマンドの実行に失敗しました。--help オプションで使用方法を確認してください。")
+		os.Exit(1)
 	}
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
+	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.wamon.yaml)")
+	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
-	// Add debug flag
-	rootCmd.Flags().BoolVar(&debugMode, "debug", false, "Enable debug output")
-
-	// Add database path flag
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println("ユーザーのホームディレクトリを取得できません:", err)
-		fmt.Println("デフォルトのデータベースパスを使用します。")
-		dbPath = ".wamon.db"
-	} else {
-		defaultDBPath := filepath.Join(home, ".wamon", "github.com/econron/wamon.db")
-		dbPath = defaultDBPath
-	}
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", dbPath, "Path to SQLite database file")
+	// Database path
+	defaultDBPath := getDefaultDBPath()
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultDBPath, "database file path")
 
 	// Add commands
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(editCmd)
 	rootCmd.AddCommand(reportCmd)
 
-	// Add category filter flag to list command
-	listCmd.Flags().StringVarP(&categoryFilter, "category", "c", "", "カテゴリでフィルタリング (調べ物, プログラマ, 調べてプログラマ)")
+	// Category filter for list command
+	listCmd.Flags().StringVarP(&categoryFilter, "category", "c", "", "filter by category (調べ物, プログラマ, 調べてプログラマ)")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -327,12 +307,12 @@ func initConfig() {
 		// Find home directory.
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Println("ユーザーのホームディレクトリを取得できません:", err)
-			fmt.Println("デフォルトのディレクトリを使用します。")
+			fmt.Println(err)
 			return
 		}
 
 		// Search config in home directory with name ".wamon" (without extension).
+		viper.AddConfigPath(filepath.Join(home, ".wamon"))
 		viper.AddConfigPath(home)
 		viper.SetConfigType("yaml")
 		viper.SetConfigName(".wamon")
@@ -340,146 +320,130 @@ func initConfig() {
 
 	viper.AutomaticEnv() // read in environment variables that match
 
-	// Set default configuration values
-	config.SetDefaults()
-
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil && debugMode {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
 }
 
-// formatDate formats a time.Time to a human-readable string
+// formatDate formats a time.Time for display
 func formatDate(t time.Time) string {
-	return t.Format("2006/01/02 15:04:05")
+	return t.Format("2006-01-02 15:04")
 }
 
-// runInteractiveJournal runs the interactive journal process
+// runInteractiveJournal guides the user through recording their activity
 func runInteractiveJournal() {
 	// Initialize database
-	_, err := db.InitDB(dbPath)
+	database, err := db.NewDB(dbPath)
 	if err != nil {
-		fmt.Printf("データベースの初期化エラー: %v\n", err)
-		fmt.Println("データベースの初期化に失敗しました。パスを確認して再度試してみてください。")
-		fmt.Printf("現在のデータベースパス: %s\n", dbPath)
+		fmt.Printf("データベースの初期化エラー: %v\nデータベースパス: %s を確認してください。\n", err, dbPath)
+		return
+	}
+	defer database.Close()
+
+	// Create prompter
+	prompter := interactive.NewPrompter()
+
+	fmt.Println("🦭 ワモンアザラシの記録 🦭")
+	fmt.Println("------------------------")
+	fmt.Println("今日の活動を記録しましょう！")
+	fmt.Println("途中でやめたい場合は 'quit' と入力してください。")
+
+	// Ask for category
+	category, err := prompter.AskCategory()
+	if err != nil {
+		fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
 		return
 	}
 
-	if debugMode {
-		fmt.Printf("データベースを初期化しました: %s\n", dbPath)
+	// Check for quit
+	if category == "quit" {
+		fmt.Println("記録をキャンセルしました。またね！")
+		return
 	}
 
-	prompter := interactive.NewPrompter()
+	// Prepare a new entry
+	entry := &models.Entry{
+		ID:        time.Now().Format("20060102150405"), // Use timestamp as ID
+		Category:  category,
+		CreatedAt: time.Now(),
+	}
 
-	fmt.Println("🦭 ワモンアザラシの日記へようこそ！ 🦭")
-	fmt.Println("終了するには 'quit' と入力してください")
-	fmt.Println("")
-
-	for {
-		// Ask for category
-		category, err := prompter.AskCategory()
+	// Ask for research topic if applicable
+	if category == models.Research || category == models.ResearchAndProgram {
+		researchTopic, err := prompter.AskResearchTopic()
 		if err != nil {
-			fmt.Printf("エラー: %v\n", err)
-			fmt.Println("もう一度試してください。")
-			continue
-		}
-
-		// Check for quit
-		if category == "quit" {
-			fmt.Println("またね！ワモンアザラシは次回のあなたの活動を楽しみにしているよ！")
+			fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
 			return
 		}
 
-		// Create a new entry
-		entry := models.NewEntry(category, 0) // Will update satisfaction later
-
-		// Get details based on category
-		switch category {
-		case models.Research:
-			topic, err := prompter.AskResearchTopic()
-			if err != nil || prompter.CheckForQuit(topic) {
-				if prompter.CheckForQuit(topic) {
-					fmt.Println("またね！ワモンアザラシは次回のあなたの活動を楽しみにしているよ！")
-					return
-				}
-				fmt.Printf("エラー: %v\n", err)
-				fmt.Println("もう一度試してください。")
-				continue
-			}
-			entry.ResearchTopic = topic
-
-		case models.Programming:
-			program, err := prompter.AskProgramTitle()
-			if err != nil || prompter.CheckForQuit(program) {
-				if prompter.CheckForQuit(program) {
-					fmt.Println("またね！ワモンアザラシは次回のあなたの活動を楽しみにしているよ！")
-					return
-				}
-				fmt.Printf("エラー: %v\n", err)
-				fmt.Println("もう一度試してください。")
-				continue
-			}
-			entry.ProgramTitle = program
-
-		case models.ResearchAndProgram:
-			// Ask for research topic first
-			topic, err := prompter.AskResearchTopic()
-			if err != nil || prompter.CheckForQuit(topic) {
-				if prompter.CheckForQuit(topic) {
-					fmt.Println("またね！ワモンアザラシは次回のあなたの活動を楽しみにしているよ！")
-					return
-				}
-				fmt.Printf("エラー: %v\n", err)
-				fmt.Println("もう一度試してください。")
-				continue
-			}
-			entry.ResearchTopic = topic
-
-			// Then ask for program title
-			program, err := prompter.AskProgramTitle()
-			if err != nil || prompter.CheckForQuit(program) {
-				if prompter.CheckForQuit(program) {
-					fmt.Println("またね！ワモンアザラシは次回のあなたの活動を楽しみにしているよ！")
-					return
-				}
-				fmt.Printf("エラー: %v\n", err)
-				fmt.Println("もう一度試してください。")
-				continue
-			}
-			entry.ProgramTitle = program
+		if prompter.CheckForQuit(researchTopic) {
+			fmt.Println("記録をキャンセルしました。またね！")
+			return
 		}
 
-		// Ask for satisfaction level
-		satisfaction, err := prompter.AskSatisfaction()
+		entry.ResearchTopic = researchTopic
+	}
+
+	// Ask for program title if applicable
+	if category == models.Programming || category == models.ResearchAndProgram {
+		programTitle, err := prompter.AskProgramTitle()
 		if err != nil {
-			fmt.Printf("エラー: %v\n", err)
-			fmt.Println("満足度は1から5の数字で入力してください。もう一度試してください。")
-			continue
-		}
-		entry.Satisfaction = satisfaction
-
-		// Save entry to database
-		err = db.SaveEntry(entry)
-		if err != nil {
-			fmt.Printf("エラー (データの保存): %v\n", err)
-			fmt.Println("記録の保存に失敗しました。もう一度試してみてください。")
-			continue
-		} else if debugMode {
-			fmt.Printf("データを保存しました: ID=%s\n", entry.ID)
+			fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
+			return
 		}
 
-		// Show encouraging message from the seal
-		prompter.ShowSealMessage(satisfaction)
+		if prompter.CheckForQuit(programTitle) {
+			fmt.Println("記録をキャンセルしました。またね！")
+			return
+		}
 
-		// Print debug information if enabled
-		if debugMode {
-			fmt.Printf("DEBUG: Entry recorded: %+v\n", entry)
+		entry.ProgramTitle = programTitle
+	}
 
-			// Display total count of entries
-			count, err := db.GetEntryCount()
-			if err == nil {
-				fmt.Printf("DEBUG: Total entries in database: %d\n", count)
-			}
+	// Ask for satisfaction
+	satisfaction, err := prompter.AskSatisfaction()
+	if err != nil {
+		fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
+		return
+	}
+	entry.Satisfaction = satisfaction
+
+	// Save the entry
+	err = database.SaveEntry(entry)
+	if err != nil {
+		fmt.Printf("データの保存エラー: %v\n再度試してみてください。\n", err)
+		return
+	}
+
+	fmt.Println("\n記録しました！")
+
+	// Show seal's message based on satisfaction
+	prompter.ShowSealMessage(satisfaction)
+
+	// Display entry count
+	count, err := database.GetEntryCount()
+	if err != nil {
+		fmt.Printf("データ取得エラー: %v\n", err)
+	} else {
+		fmt.Printf("\n現在の記録数: %d件\n", count)
+	}
+}
+
+// getDefaultDBPath returns the default path for the database file
+func getDefaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "wamon.db" // Fallback to current directory
+	}
+
+	// Create .wamon directory if it doesn't exist
+	wamonDir := filepath.Join(home, ".wamon")
+	if _, err := os.Stat(wamonDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(wamonDir, 0755); err != nil {
+			return "wamon.db" // Fallback to current directory
 		}
 	}
+
+	return filepath.Join(wamonDir, "wamon.db")
 }

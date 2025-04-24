@@ -23,13 +23,42 @@ Wamon helps you track your daily research and programming activities through a f
 
 ## Installation
 
-### Using Go (recommended)
+### Using Prebuilt Binary (Recommended for non-developers)
+
+1. Download the latest release from the [Releases page](https://github.com/econron/wamon/releases).
+2. Extract the archive and place the `wamon` binary in your PATH.
+
+```bash
+# macOS/Linux
+chmod +x wamon
+sudo mv wamon /usr/local/bin/
+```
+
+### Using Homebrew (macOS/Linux)
+
+If you have [Homebrew](https://brew.sh/) installed, you can use it to install Wamon:
+
+```bash
+# Tap the repository
+brew tap econron/wamon
+
+# Install Wamon
+brew install wamon
+```
+
+To upgrade to the latest version:
+
+```bash
+brew upgrade wamon
+```
+
+### Using Go (for developers)
 
 ```bash
 go install github.com/econron/wamon@latest
 ```
 
-### Manual Installation
+### Manual Installation (for developers)
 
 1. Clone the repository:
 ```bash
@@ -39,6 +68,8 @@ cd wamon
 
 2. Build the executable:
 ```bash
+make build
+# or
 go build -o wamon
 ```
 
@@ -170,9 +201,40 @@ slack:
 - 設定ファイルを使用する場合は、`.gitignore` に追加することを推奨します
 - CIなどで使用する場合は、環境変数として設定することを強く推奨します
 
-## Contributing
+## For Developers
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/econron/wamon.git
+cd wamon
+
+# Build the application
+make build
+
+# Run tests
+make test
+
+# Run tests with race detection
+make test-race
+
+# Run tests with coverage report
+make test-coverage
+
+# Run CI tests (race detection + coverage threshold check)
+make ci-test
+```
+
+### Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+Before submitting your PR:
+1. Make sure all tests pass with `make ci-test`
+2. Ensure test coverage is at least 80%
+3. Run `go fmt ./...` to format your code
+4. Add/update tests for your changes
 
 ## License
 

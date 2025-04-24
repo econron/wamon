@@ -35,6 +35,92 @@ func NewClient(config Config) *Client {
 	}
 }
 
+// SendWeeklyReport sends a summary of the last week's entries to the specified Slack channel
+// This function can be called directly without creating a Client instance
+func SendWeeklyReport(token, channel string, entries []*models.Entry) error {
+	if token == "" {
+		return fmt.Errorf("slack token is required")
+	}
+
+	if channel == "" {
+		return fmt.Errorf("slack channel is required")
+	}
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no entries to report")
+	}
+
+	api := slack.New(token)
+
+	// Create the message blocks
+	headerBlock := slack.NewHeaderBlock(slack.NewTextBlockObject("plain_text", "🦭 先週のワモンアザラシの記録 🦭", true, false))
+
+	var blocks []slack.Block
+	blocks = append(blocks, headerBlock)
+	blocks = append(blocks, slack.NewDividerBlock())
+
+	// Group entries by day
+	entriesByDay := make(map[string][]*models.Entry)
+	for _, entry := range entries {
+		day := entry.CreatedAt.Format("2006-01-02")
+		entriesByDay[day] = append(entriesByDay[day], entry)
+	}
+
+	// Add each day's entries
+	for day, dayEntries := range entriesByDay {
+		// Format the date as a section header
+		dateTime, _ := time.Parse("2006-01-02", day)
+		dateHeader := slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*%s*", dateTime.Format("2006/01/02 (Mon)")), false, false),
+			nil, nil,
+		)
+		blocks = append(blocks, dateHeader)
+
+		// Add each entry for this day
+		for _, entry := range dayEntries {
+			var fieldTexts []string
+
+			fieldTexts = append(fieldTexts, fmt.Sprintf("*カテゴリ:* %s", entry.Category))
+
+			if entry.ResearchTopic != "" {
+				fieldTexts = append(fieldTexts, fmt.Sprintf("*調べたこと:* %s", entry.ResearchTopic))
+			}
+
+			if entry.ProgramTitle != "" {
+				fieldTexts = append(fieldTexts, fmt.Sprintf("*書いたプログラム:* %s", entry.ProgramTitle))
+			}
+
+			fieldTexts = append(fieldTexts, fmt.Sprintf("*満足度:* %s", getStarRating(entry.Satisfaction)))
+
+			// Create a section block for the entry
+			entryText := strings.Join(fieldTexts, "\n")
+			entryBlock := slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", entryText, false, false),
+				nil, nil,
+			)
+			blocks = append(blocks, entryBlock)
+			blocks = append(blocks, slack.NewDividerBlock())
+		}
+	}
+
+	// Add summary footer
+	summaryText := fmt.Sprintf("先週は合計 *%d件* の記録がありました。次も頑張りましょう！", len(entries))
+	summaryBlock := slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn", summaryText, false, false),
+		nil, nil,
+	)
+	blocks = append(blocks, summaryBlock)
+
+	// Send the message
+	_, _, err := api.PostMessage(
+		channel,
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionAsUser(true),
+	)
+
+	return err
+}
+
 // SendWeeklyReport sends a summary of the last week's entries to the configured Slack channel
 func (c *Client) SendWeeklyReport(entries []*models.Entry) error {
 	// Only check if the api is initialized

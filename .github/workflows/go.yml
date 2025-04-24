@@ -1,0 +1,66 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Test with race detection and coverage
+      run: make ci-test
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: coverage.out
+        
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+        
+    - name: Build for multiple platforms
+      run: |
+        # Build for macOS (Intel and ARM)
+        GOOS=darwin GOARCH=amd64 go build -o wamon-darwin-amd64
+        GOOS=darwin GOARCH=arm64 go build -o wamon-darwin-arm64
+        
+        # Build for Linux
+        GOOS=linux GOARCH=amd64 go build -o wamon-linux-amd64
+        GOOS=linux GOARCH=arm64 go build -o wamon-linux-arm64
+        
+        # Add execution permission
+        chmod +x wamon-*
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          wamon-darwin-amd64
+          wamon-darwin-arm64
+          wamon-linux-amd64
+          wamon-linux-arm64
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
