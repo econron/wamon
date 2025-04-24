@@ -1,10 +1,13 @@
 package db
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +28,7 @@ type DB interface {
 	GetEntriesSince(since time.Time) ([]*models.Entry, error)
 	ExportEntries(filePath string) error
 	ExportEntriesSince(filePath string, since time.Time) error
+	ImportEntries(filePath string) (int, error)
 	Close() error
 }
 
@@ -380,11 +384,24 @@ func (s *SQLiteDB) ExportEntries(filePath string) error {
 
 	// Write each entry as a JSON object on its own line
 	for _, entry := range entries {
+		// Convert category to more common English names for export
+		var catStr string
+		switch entry.Category {
+		case models.Research:
+			catStr = "research"
+		case models.Programming:
+			catStr = "programming"
+		case models.ResearchAndProgram:
+			catStr = "research_and_programming"
+		default:
+			catStr = string(entry.Category)
+		}
+
 		// Create simplified export format object
 		exportEntry := map[string]interface{}{
 			"id":  entry.ID,
 			"ts":  entry.CreatedAt.Format(time.RFC3339),
-			"cat": string(entry.Category),
+			"cat": catStr,
 		}
 
 		// Set body based on category
@@ -455,11 +472,24 @@ func (s *SQLiteDB) ExportEntriesSince(filePath string, since time.Time) error {
 
 	// Write each entry as a JSON object on its own line
 	for _, entry := range entries {
+		// Convert category to more common English names for export
+		var catStr string
+		switch entry.Category {
+		case models.Research:
+			catStr = "research"
+		case models.Programming:
+			catStr = "programming"
+		case models.ResearchAndProgram:
+			catStr = "research_and_programming"
+		default:
+			catStr = string(entry.Category)
+		}
+
 		// Create simplified export format object
 		exportEntry := map[string]interface{}{
 			"id":  entry.ID,
 			"ts":  entry.CreatedAt.Format(time.RFC3339),
-			"cat": string(entry.Category),
+			"cat": catStr,
 		}
 
 		// Set body based on category
@@ -492,6 +522,153 @@ func (s *SQLiteDB) ExportEntriesSince(filePath string, since time.Time) error {
 	}
 
 	return nil
+}
+
+// ImportEntries imports entries from a JSON file into the database
+func (s *SQLiteDB) ImportEntries(filePath string) (int, error) {
+	// Open the file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	// Begin transaction
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("トランザクション開始エラー: %v", err)
+	}
+
+	// Read the file line by line
+	scanner := bufio.NewScanner(file)
+	importedCount := 0
+
+	// Prepare function for rollback in case of error
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		// Parse the JSON line
+		var data map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &data); err != nil {
+			return importedCount, fmt.Errorf("JSON解析エラー: %v", err)
+		}
+
+		// Extract fields
+		id, ok := data["id"].(string)
+		if !ok {
+			return importedCount, fmt.Errorf("不正なID形式: %v", data["id"])
+		}
+
+		// Check if entry with this ID already exists
+		var count int
+		err := tx.QueryRow("SELECT COUNT(*) FROM entries WHERE id = ?", id).Scan(&count)
+		if err != nil {
+			return importedCount, fmt.Errorf("データベースクエリエラー: %v", err)
+		}
+
+		if count > 0 {
+			// Entry already exists, skip
+			continue
+		}
+
+		// Parse timestamp
+		tsStr, ok := data["ts"].(string)
+		if !ok {
+			return importedCount, fmt.Errorf("不正な日時形式: %v", data["ts"])
+		}
+		createdAt, err := time.Parse(time.RFC3339, tsStr)
+		if err != nil {
+			return importedCount, fmt.Errorf("日時の解析エラー: %v", err)
+		}
+
+		// Parse category
+		catStr, ok := data["cat"].(string)
+		if !ok {
+			return importedCount, fmt.Errorf("不正なカテゴリ形式: %v", data["cat"])
+		}
+
+		// Map the export category names back to internal model categories
+		var category models.Category
+		switch catStr {
+		case "research", "調べ物":
+			category = models.Research
+		case "programming", "プログラマ":
+			category = models.Programming
+		case "research_and_programming", "研究とプログラミング", "調べてプログラマ":
+			category = models.ResearchAndProgram
+		default:
+			return importedCount, fmt.Errorf("不明なカテゴリ: %v", catStr)
+		}
+
+		// Parse body
+		body, ok := data["body"].(string)
+		if !ok {
+			return importedCount, fmt.Errorf("不正な本文形式: %v", data["body"])
+		}
+
+		// Create entry
+		entry := &models.Entry{
+			ID:           id,
+			Category:     category,
+			CreatedAt:    createdAt,
+			Satisfaction: 3, // Default satisfaction if not specified
+		}
+
+		// Set content based on category
+		switch category {
+		case models.Research:
+			entry.ResearchTopic = body
+		case models.Programming:
+			entry.ProgramTitle = body
+		case models.ResearchAndProgram:
+			// Try to split combined body
+			parts := strings.Split(body, " - ")
+			if len(parts) == 2 {
+				entry.ResearchTopic = parts[0]
+				entry.ProgramTitle = parts[1]
+			} else {
+				// Fallback to using the entire body as research topic
+				entry.ResearchTopic = body
+			}
+		}
+
+		// Save the entry within transaction
+		_, err = tx.Exec(
+			`INSERT INTO entries (id, category, research_topic, program_title, satisfaction, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			entry.ID,
+			entry.Category,
+			entry.ResearchTopic,
+			entry.ProgramTitle,
+			entry.Satisfaction,
+			entry.CreatedAt,
+		)
+		if err != nil {
+			return importedCount, fmt.Errorf("エントリの保存エラー: %v", err)
+		}
+
+		importedCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return importedCount, fmt.Errorf("ファイル読み込みエラー: %v", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return importedCount, fmt.Errorf("トランザクションコミットエラー: %v", err)
+	}
+
+	return importedCount, nil
 }
 
 // Backward compatibility functions that use the global db instance

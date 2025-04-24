@@ -293,6 +293,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(editCmd)
 	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(setDBCmd)
 
 	// Category filter for list command
 	listCmd.Flags().StringVarP(&categoryFilter, "category", "c", "", "filter by category (調べ物, プログラマ, 調べてプログラマ)")
@@ -432,6 +433,13 @@ func runInteractiveJournal() {
 
 // getDefaultDBPath returns the default path for the database file
 func getDefaultDBPath() string {
+	// First try to get path from config or environment variable
+	appConfig, err := config.LoadConfig()
+	if err == nil && appConfig.DatabasePath != "" {
+		return appConfig.DatabasePath
+	}
+
+	// If not configured, use default location
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "wamon.db" // Fallback to current directory
@@ -446,4 +454,23 @@ func getDefaultDBPath() string {
 	}
 
 	return filepath.Join(wamonDir, "wamon.db")
+}
+
+// setDBCmd saves the current database path to configuration
+var setDBCmd = &cobra.Command{
+	Use:   "set-db",
+	Short: "現在のデータベースパスを設定に保存",
+	Long: `現在のデータベースパスを設定ファイルに保存します。
+これにより、--dbオプションを毎回指定する必要がなくなります。`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Save current DB path to config
+		err := config.SaveDatabasePath(dbPath)
+		if err != nil {
+			fmt.Printf("設定の保存エラー: %v\n再度試してみてください。\n", err)
+			return
+		}
+
+		fmt.Printf("データベースパス %s を設定に保存しました。\n", dbPath)
+		fmt.Println("今後は--dbオプションを指定しなくても、このパスが使用されます。")
+	},
 }

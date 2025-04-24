@@ -10,7 +10,8 @@ import (
 
 // AppConfig holds all application configuration
 type AppConfig struct {
-	Slack slack.Config
+	Slack        slack.Config
+	DatabasePath string
 }
 
 // LoadConfig loads the application configuration from viper and environment variables
@@ -18,6 +19,7 @@ func LoadConfig() (*AppConfig, error) {
 	// First try environment variables
 	slackToken := os.Getenv("WAMON_SLACK_TOKEN")
 	slackChannel := os.Getenv("WAMON_SLACK_CHANNEL")
+	dbPath := os.Getenv("WAMON_DB_PATH")
 
 	// If not set in env vars, use viper config
 	if slackToken == "" {
@@ -25,6 +27,9 @@ func LoadConfig() (*AppConfig, error) {
 	}
 	if slackChannel == "" {
 		slackChannel = viper.GetString("slack.channel")
+	}
+	if dbPath == "" {
+		dbPath = viper.GetString("database.path")
 	}
 
 	// Set enabled if we have a token
@@ -36,6 +41,7 @@ func LoadConfig() (*AppConfig, error) {
 			Channel: slackChannel,
 			Enabled: enabled,
 		},
+		DatabasePath: dbPath,
 	}
 
 	return config, nil
@@ -47,6 +53,28 @@ func SaveSlackConfig(token, channel string) error {
 	viper.Set("slack.token", token)
 	viper.Set("slack.channel", channel)
 	viper.Set("slack.enabled", true)
+
+	// Ensure config directory exists
+	configDir := filepath.Join(os.Getenv("HOME"), ".wamon")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+
+	// Save to file
+	configFile := filepath.Join(configDir, ".wamon.yaml")
+	if err := viper.WriteConfigAs(configFile); err != nil {
+		return err
+	}
+
+	// 設定を再読み込み
+	viper.SetConfigFile(configFile)
+	return viper.ReadInConfig()
+}
+
+// SaveDatabasePath saves the database path to configuration
+func SaveDatabasePath(path string) error {
+	// Set the value
+	viper.Set("database.path", path)
 
 	// Ensure config directory exists
 	configDir := filepath.Join(os.Getenv("HOME"), ".wamon")
