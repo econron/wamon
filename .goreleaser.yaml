@@ -83,7 +83,7 @@ brews:
     homepage: "https://github.com/econron/wamon"
 
     # ツールの短い説明 (brew search などで表示されます)
-    description: "wamon - A CLI tool related to WAON points or services (仮)" # ★ ここは必ずツールに合わせて変更してください
+    description: "CLI tool related to WAON points or services"
 
     # ツール本体のライセンス (SPDX ID形式で指定してください)
     # 例: "MIT", "Apache-2.0" など。wamonリポジトリのLICENSEファイルと一致させます。
