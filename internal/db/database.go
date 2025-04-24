@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,6 +22,7 @@ type DB interface {
 	GetEntryByID(id string) (*models.Entry, error)
 	GetEntryCount() (int, error)
 	GetEntriesFromLastWeek() ([]*models.Entry, error)
+	ExportEntries(filePath string) error
 	Close() error
 }
 
@@ -303,6 +305,81 @@ func (s *SQLiteDB) GetEntriesFromLastWeek() ([]*models.Entry, error) {
 	}
 
 	return entries, nil
+}
+
+// ExportEntries exports all entries from the database to a JSON file
+// Each entry is written as a separate JSON object on its own line (JSON Lines format)
+func (s *SQLiteDB) ExportEntries(filePath string) error {
+	// Get all entries ordered by creation time (newest first)
+	entries, err := s.GetAllEntries()
+	if err != nil {
+		return err
+	}
+
+	// If there are no entries, create an empty file
+	if len(entries) == 0 {
+		emptyFile, err := os.Create(filePath)
+		if err != nil {
+			return err
+		}
+		defer emptyFile.Close()
+		return nil
+	}
+
+	// Create the directory if it doesn't exist
+	dir := filepath.Dir(filePath)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Create or truncate the output file
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Write each entry as a JSON object on its own line
+	for _, entry := range entries {
+		// Create simplified export format object
+		exportEntry := map[string]interface{}{
+			"id":  entry.ID,
+			"ts":  entry.CreatedAt.Format(time.RFC3339),
+			"cat": string(entry.Category),
+		}
+
+		// Set body based on category
+		switch entry.Category {
+		case models.Research:
+			exportEntry["body"] = entry.ResearchTopic
+		case models.Programming:
+			exportEntry["body"] = entry.ProgramTitle
+		case models.ResearchAndProgram:
+			exportEntry["body"] = entry.ResearchTopic + " - " + entry.ProgramTitle
+		}
+
+		// Convert to JSON
+		jsonData, err := json.Marshal(exportEntry)
+		if err != nil {
+			return err
+		}
+
+		// Write the JSON line
+		_, err = file.Write(jsonData)
+		if err != nil {
+			return err
+		}
+
+		// Add newline
+		_, err = file.Write([]byte("\n"))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Backward compatibility functions that use the global db instance
