@@ -111,7 +111,10 @@ brews:
     # Formula内の `test do` ブロックに記述される内容
     # インストール後に簡単な動作確認を行うコマンドを記述します
     test: |
-      # 例1: ヘルプコマンドがエラーなく実行できればOKとする
-      system "#{bin}/wamon", "--help"
-      # 例2: バージョンコマンドの出力に特定の文字列が含まれるか確認する
+      # system コマンドのパス指定を推奨スタイルに変更
+      system bin/"wamon", "--help"
+
+      # shell_output はコマンド全体を文字列として渡すため、
+      # こちらは "#{bin}/wamon --version" のままでも audit で指摘されないことが多いです。
+      # もしこちらも指摘されるようであれば、別のテスト方法を検討します。
       assert_match "wamon version", shell_output("#{bin}/wamon --version")
