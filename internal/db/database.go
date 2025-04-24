@@ -384,18 +384,8 @@ func (s *SQLiteDB) ExportEntries(filePath string) error {
 
 	// Write each entry as a JSON object on its own line
 	for _, entry := range entries {
-		// Convert category to more common English names for export
-		var catStr string
-		switch entry.Category {
-		case models.Research:
-			catStr = "research"
-		case models.Programming:
-			catStr = "programming"
-		case models.ResearchAndProgram:
-			catStr = "research_and_programming"
-		default:
-			catStr = string(entry.Category)
-		}
+		// Use the original category string directly
+		catStr := string(entry.Category)
 
 		// Create simplified export format object
 		exportEntry := map[string]interface{}{
@@ -472,18 +462,8 @@ func (s *SQLiteDB) ExportEntriesSince(filePath string, since time.Time) error {
 
 	// Write each entry as a JSON object on its own line
 	for _, entry := range entries {
-		// Convert category to more common English names for export
-		var catStr string
-		switch entry.Category {
-		case models.Research:
-			catStr = "research"
-		case models.Programming:
-			catStr = "programming"
-		case models.ResearchAndProgram:
-			catStr = "research_and_programming"
-		default:
-			catStr = string(entry.Category)
-		}
+		// Use the original category string directly
+		catStr := string(entry.Category)
 
 		// Create simplified export format object
 		exportEntry := map[string]interface{}{
@@ -603,7 +583,7 @@ func (s *SQLiteDB) ImportEntries(filePath string) (int, error) {
 			category = models.Research
 		case "programming", "プログラマ":
 			category = models.Programming
-		case "research_and_programming", "研究とプログラミング", "調べてプログラマ":
+		case "research_and_programming", "調べてプログラマ":
 			category = models.ResearchAndProgram
 		default:
 			return importedCount, fmt.Errorf("不明なカテゴリ: %v", catStr)
