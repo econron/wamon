@@ -37,6 +37,6 @@ test-coverage:
 
 # CIテストを実行（race検出とカバレッジチェック）
 ci-test:
-	go test ./... -race -coverprofile=coverage.out -covermode=atomic
+	CI=true go test ./... -race -coverprofile=coverage.out -covermode=atomic
 	@echo "Checking coverage threshold..."
 	@go tool cover -func=coverage.out | grep "total:" | awk '{print $$3}' | sed 's/%//' | awk '{if ($$1 < 80) {print "Coverage " $$1 "% is below threshold of 80%"; exit 1} else {print "Coverage " $$1 "% passes threshold of 80%"}}' 
