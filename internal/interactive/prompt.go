@@ -25,83 +25,45 @@ func NewPrompter() *Prompter {
 // EditEntry prompts the user to edit the entry content interactively with a TUI editor
 func (p *Prompter) EditEntry(entry *models.Entry) error {
 	fmt.Println("エントリの編集を開始します...")
-	fmt.Println("Ctrl+S で保存、ESC でキャンセルできます。")
-	fmt.Println("")
 
-	// Store original values for rollback if needed
-	origResearchTopic := entry.ResearchTopic
-	origProgramTitle := entry.ProgramTitle
-	origSatisfaction := entry.Satisfaction
-
-	// Edit research topic if applicable
+	// Create initial content
+	initialContent := fmt.Sprintf("カテゴリ: %s\n\n", entry.Category)
 	if entry.Category == models.Research || entry.Category == models.ResearchAndProgram {
-		newContent, saved, err := EditText(entry.ResearchTopic, "調べたこと")
-		if err != nil {
-			fmt.Printf("テキストエディタでエラーが発生しました: %v\n", err)
-			fmt.Println("編集操作を中断します。")
-			return fmt.Errorf("編集エラー: %v", err)
-		}
-
-		if !saved {
-			fmt.Println("編集がキャンセルされました。")
-			return fmt.Errorf("キャンセルされました")
-		}
-
-		entry.ResearchTopic = newContent
+		initialContent += fmt.Sprintf("調べたこと:\n%s\n\n", entry.ResearchTopic)
 	}
-
-	// Edit program title if applicable
 	if entry.Category == models.Programming || entry.Category == models.ResearchAndProgram {
-		newContent, saved, err := EditText(entry.ProgramTitle, "書いたプログラム")
-		if err != nil {
-			fmt.Printf("テキストエディタでエラーが発生しました: %v\n", err)
-			fmt.Println("元の内容に戻します。")
-			// Rollback changes
-			entry.ResearchTopic = origResearchTopic
-			return fmt.Errorf("編集エラー: %v", err)
-		}
-
-		if !saved {
-			// Rollback changes
-			entry.ResearchTopic = origResearchTopic
-			fmt.Println("編集がキャンセルされました。")
-			return fmt.Errorf("キャンセルされました")
-		}
-
-		entry.ProgramTitle = newContent
+		initialContent += fmt.Sprintf("書いたプログラム:\n%s\n\n", entry.ProgramTitle)
 	}
+	initialContent += fmt.Sprintf("満足度: %d/5\n", entry.Satisfaction)
 
-	// Edit satisfaction level
-	// We'll use a simple prompt for satisfaction since it's just a number
-	fmt.Printf("現在の満足度: %d/5\n", entry.Satisfaction)
-	fmt.Println("新しい満足度を1-5で入力してください (そのままの場合はEnter):")
-	fmt.Print("> ")
-	input, err := p.reader.ReadString('\n')
+	// Edit content using external editor
+	editedContent, err := EditWithExternalEditor(initialContent)
 	if err != nil {
-		fmt.Printf("入力の読み取りエラー: %v\n", err)
-		fmt.Println("元の満足度を保持します。")
-		return err
+		return fmt.Errorf("編集エラー: %v", err)
 	}
 
-	input = strings.TrimSpace(input)
-	if input == "cancel" {
-		// Rollback changes
-		entry.ResearchTopic = origResearchTopic
-		entry.ProgramTitle = origProgramTitle
-		entry.Satisfaction = origSatisfaction
-		return fmt.Errorf("キャンセルされました")
-	} else if input == "done" {
-		return nil
-	} else if input != "" {
-		satisfaction, err := strconv.Atoi(input)
-		if err != nil || satisfaction < 1 || satisfaction > 5 {
-			fmt.Println("無効な満足度です。1から5の数字を入力してください。変更をスキップします。")
-		} else {
-			entry.Satisfaction = satisfaction
+	// Parse the edited content
+	lines := strings.Split(editedContent, "\n")
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "調べたこと:") {
+			if i+1 < len(lines) {
+				entry.ResearchTopic = strings.TrimSpace(lines[i+1])
+			}
+		} else if strings.HasPrefix(line, "書いたプログラム:") {
+			if i+1 < len(lines) {
+				entry.ProgramTitle = strings.TrimSpace(lines[i+1])
+			}
+		} else if strings.HasPrefix(line, "満足度:") {
+			parts := strings.Split(line, "/")
+			if len(parts) > 0 {
+				if sat, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
+					entry.Satisfaction = sat
+				}
+			}
 		}
 	}
 
-	fmt.Println("編集が完了しました！")
 	return nil
 }
 

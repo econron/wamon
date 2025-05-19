@@ -370,36 +370,35 @@ func runInteractiveJournal() {
 		CreatedAt: time.Now(),
 	}
 
-	// Ask for research topic if applicable
+	// Create initial content for the editor
+	initialContent := fmt.Sprintf("カテゴリ: %s\n\n", category)
 	if category == models.Research || category == models.ResearchAndProgram {
-		researchTopic, err := prompter.AskResearchTopic()
-		if err != nil {
-			fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
-			return
-		}
-
-		if prompter.CheckForQuit(researchTopic) {
-			fmt.Println("記録をキャンセルしました。またね！")
-			return
-		}
-
-		entry.ResearchTopic = researchTopic
+		initialContent += "調べたこと:\n"
+	}
+	if category == models.Programming || category == models.ResearchAndProgram {
+		initialContent += "書いたプログラム:\n"
 	}
 
-	// Ask for program title if applicable
-	if category == models.Programming || category == models.ResearchAndProgram {
-		programTitle, err := prompter.AskProgramTitle()
-		if err != nil {
-			fmt.Printf("入力エラー: %v\n再度試してみてください。\n", err)
-			return
-		}
+	// Edit content using external editor
+	editedContent, err := interactive.EditWithExternalEditor(initialContent)
+	if err != nil {
+		fmt.Printf("編集エラー: %v\n編集をキャンセルしました。\n", err)
+		return
+	}
 
-		if prompter.CheckForQuit(programTitle) {
-			fmt.Println("記録をキャンセルしました。またね！")
-			return
+	// Parse the edited content
+	lines := strings.Split(editedContent, "\n")
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "調べたこと:") {
+			if i+1 < len(lines) {
+				entry.ResearchTopic = strings.TrimSpace(lines[i+1])
+			}
+		} else if strings.HasPrefix(line, "書いたプログラム:") {
+			if i+1 < len(lines) {
+				entry.ProgramTitle = strings.TrimSpace(lines[i+1])
+			}
 		}
-
-		entry.ProgramTitle = programTitle
 	}
 
 	// Ask for satisfaction
